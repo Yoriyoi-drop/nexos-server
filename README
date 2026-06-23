@@ -1,0 +1,55 @@
+NexOS Server 1.0
+=================
+Linux 7.1 + Limine Bootloader | Server-Focused Distribution
+
+BUILT-IN FEATURES:
+------------------
+- Kernel Linux 7.1 server-optimized (BBR TCP, KVM, containers, NVMe, Btrfs/XFS)
+- systemd init system (networkd, timesyncd, journald)
+- Nginx web server (HTTP/2, SSL, reverse proxy, load balancing)
+- containerd container runtime
+- Kubernetes (kubelet, kubeadm, kubectl) v1.31.0
+- nftables/iptables firewall
+- Docker-compatible via containerd
+
+INSTALLATION:
+-------------
+Write ISO to USB/disk:
+  dd if=nexos-server.iso of=/dev/sdX bs=4M status=progress
+
+Boot from ISO, then install to disk:
+  nexos-install /dev/sda
+
+DEFAULT CREDENTIALS:
+--------------------
+  Username: root
+  Password: nexos
+
+SERVICES:
+---------
+  systemctl enable --now nginx
+  systemctl enable --now containerd
+  systemctl enable --now kubelet
+
+FILESYSTEM LAYOUT:
+------------------
+  /var/www/html   - Web root
+  /var/log        - Log files
+  /var/lib/containerd - Container data
+  /var/lib/kubelet    - Kubelet data
+  /etc/nginx      - Nginx configuration
+  /etc/containerd - Container runtime config
+  /etc/kubernetes - Kubernetes config
+
+BUILD REQUIREMENTS:
+-------------------
+  - GCC, make, bison, flex, bc
+  - XORRISO, mtools
+  - Meson, ninja (for systemd)
+  - libelf-dev, libssl-dev, libcap-dev
+
+BUILD FROM SOURCE:
+------------------
+  ./build.sh              - Full build (all stages)
+  make kernel             - Build kernel only
+  make iso                - Build final ISO

@@ -1,0 +1,34 @@
+# Build output
+work/
+nexos-server.iso
+nexos-server.img
+nexos-server.squashfs*.img
+*.img
+*.iso
+*.raw
+*.raw.gz
+*.qcow2
+# Kernel source
+linux-*/
+# Build artifacts
+*.o
+*.ko
+*.mod
+*.mod.c
+Module.symvers
+modules.order
+# Temp
+/tmp/
+*.tmp
+# Keys (never commit private keys)
+work/nexos-key.rsa
+work/*.rsa
+!work/*.rsa.pub
+# OS files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+src/
+src/

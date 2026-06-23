@@ -1,0 +1,71 @@
+name: NexOS Live Patch Build
+
+on:
+  push:
+    paths:
+      - 'patches/livepatch/*.patch'
+  workflow_dispatch:
+    inputs:
+      patch:
+        description: 'Patch file to build'
+        required: true
+        default: 'patches/livepatch/example.patch'
+
+jobs:
+  kpatch-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install deps
+        run: |
+          sudo apt-get update && sudo apt-get install -y \
+            build-essential flex bison libelf-dev libssl-dev \
+            bc cpio wget python3 python3-pip \
+            gcc-plugin-dev
+
+      - name: Get kernel source
+        run: |
+          if [ ! -d linux-7.1 ]; then
+            wget -q https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.1.tar.xz
+            tar xf linux-7.1.tar.xz
+            cp configs/kernel.config linux-7.1/.config
+            cd linux-7.1 && make olddefconfig && make -j$(nproc) modules_prepare
+          fi
+
+      - name: Install kpatch
+        run: |
+          git clone --depth=1 https://github.com/dynup/kpatch /tmp/kpatch
+          cd /tmp/kpatch && make -C /tmp/kpatch
+          sudo make -C /tmp/kpatch install
+
+      - name: Build live patch
+        run: |
+          PATCH="${{ github.event.inputs.patch || 'patches/livepatch/example.patch' }}"
+          if [ ! -f "$PATCH" ]; then
+            echo "No patch found, creating example..."
+            mkdir -p patches/livepatch
+            cat > patches/livepatch/example.patch << 'EOF'
+#include <linux/kernel.h>
+#include <linux/module.h>
+#include <linux/kpatch.h>
+
+/* Example: live patch that adds a printk to kernel_init */
+static int __kpatch_init init_hook(void) {
+    printk(KERN_INFO "NexOS live patch loaded: %s\n", THIS_MODULE->name);
+    return 0;
+}
+module_init(init_hook);
+MODULE_LICENSE("GPL");
+MODULE_INFO(livepatch, "Y");
+EOF
+            PATCH="patches/livepatch/example.patch"
+          fi
+          kpatch-build -t vmlinux -s "$PWD/linux-7.1" "$PATCH" -o /tmp/livepatch.ko
+
+      - name: Upload live patch
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexos-livepatch
+          path: /tmp/livepatch.ko
+          retention-days: 90

@@ -1,0 +1,11 @@
+NAME="NexOS Server"
+ID=nexos
+PRETTY_NAME="NexOS Server 1.0 (Sequoia)"
+VERSION_ID="1.0"
+VERSION="1.0"
+VERSION_CODENAME=sequoia
+BUILD_ID="2025.1"
+HOME_URL="https://nexos.local"
+SUPPORT_URL="https://nexos.local/support"
+BUG_REPORT_URL="https://nexos.local/bugs"
+ID_LIKE="custom"

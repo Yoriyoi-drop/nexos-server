@@ -1,0 +1,71 @@
+name: NexOS OSTree Deploy
+
+on:
+  push:
+    branches: [main, release/*]
+  schedule:
+    - cron: '0 6 * * 1'  # Weekly Monday build
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install deps
+        run: |
+          sudo apt-get update && sudo apt-get install -y \
+            build-essential flex bison libelf-dev libssl-dev \
+            bc cpio xorriso mtools zstd wget meson ninja-build \
+            pkg-config libpam0g-dev libapparmor-dev libaudit-dev
+
+      - name: Cache kernel
+        id: cache-kernel
+        uses: actions/cache@v4
+        with:
+          path: linux-7.1
+          key: linux-7.1-${{ hashFiles('configs/kernel.config') }}
+
+      - name: Get kernel source
+        if: steps.cache-kernel.outputs.cache-hit != 'true'
+        run: |
+          wget -q https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.1.tar.xz
+          tar xf linux-7.1.tar.xz
+
+      - name: Build
+        run: |
+          cp configs/kernel.config linux-7.1/.config
+          cd linux-7.1 && make olddefconfig && make -j$(nproc) bzImage modules
+          cd .. && cp linux-7.1/arch/x86_64/boot/bzImage work/
+          cp -r linux-7.1/lib/modules work/
+
+      - name: Run tests
+        run: bash test.sh
+
+      - name: Create OSTree commit
+        run: |
+          apk add ostree
+          mkdir -p /srv/ostree/repo
+          ostree init --repo=/srv/ostree/repo --mode=archive-z2
+          rsync -aAX --exclude={/proc,/sys,/dev,/run,/tmp,.git} . /srv/ostree/checkout/
+          ostree commit --repo=/srv/ostree/repo \
+            --branch=nexos/$(uname -m)/stable \
+            --subject="Build ${{ github.sha }}" \
+            /srv/ostree/checkout/
+
+      - name: Upload OSTree repo
+        uses: actions/upload-artifact@v4
+        with:
+          name: ostree-repo
+          path: /srv/ostree/repo
+          retention-days: 7
+
+      - name: Build ISO
+        run: ./build.sh
+
+      - name: Upload ISO
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexos-server-iso
+          path: NexOS/nexos-server.iso
+          retention-days: 30

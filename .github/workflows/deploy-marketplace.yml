@@ -1,0 +1,108 @@
+name: NexOS Deploy to Cloud Marketplaces
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version'
+        required: true
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build-ami:
+    name: Build + Upload AWS AMI
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Build ISO
+        run: |
+          sudo apt-get update && sudo apt-get install -y qemu-utils grub-efi-amd64-bin
+          ./build.sh
+
+      - name: Create AMI raw image
+        run: |
+          TAG=${{ github.event.release.tag_name || github.sha }}
+          qemu-img create -f raw /tmp/nexos-${TAG}.raw 10G
+          LOOP=$(sudo losetup --show -fP /tmp/nexos-${TAG}.raw)
+          sudo sfdisk "$LOOP" <<< 'label: gpt
+          size=512M, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B
+          type=0FC63DAF-8483-4772-8E79-3D69D8477DE4'
+          sudo mkfs.fat -F32 "${LOOP}p1"
+          sudo mkfs.ext4 -F "${LOOP}p2"
+          sudo mount "${LOOP}p2" /mnt && sudo mkdir -p /mnt/boot && sudo mount "${LOOP}p1" /mnt/boot
+          sudo mkdir -p /mnt/iso && sudo mount -o loop NexOS/nexos-server.iso /mnt/iso
+          sudo cp -a /mnt/iso/* /mnt/ 2>/dev/null || true
+          sudo umount /mnt/iso /mnt/boot /mnt
+          sudo losetup -d "$LOOP"
+          gzip -c /tmp/nexos-${TAG}.raw > /tmp/nexos-${TAG}.raw.gz
+
+      - name: Upload to S3
+        run: |
+          TAG=${{ github.event.release.tag_name || github.sha }}
+          aws s3 cp /tmp/nexos-${TAG}.raw.gz \
+            s3://${{ secrets.AWS_S3_BUCKET }}/images/nexos-${TAG}.raw.gz
+
+      - name: Import as AMI
+        run: |
+          TAG=${{ github.event.release.tag_name || github.sha }}
+          aws ec2 import-snapshot --description "NexOS ${TAG}" \
+            --disk-container "Description=NexOS Server,Format=raw,Url=https://${{ secrets.AWS_S3_BUCKET }}.s3.amazonaws.com/images/nexos-${TAG}.raw.gz"
+
+  build-gcp:
+    name: Build + Upload GCP Image
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to GCP (OIDC)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Build ISO
+        run: |
+          sudo apt-get update && sudo apt-get install -y qemu-utils grub-efi-amd64-bin
+          ./build.sh
+
+      - name: Create GCP image
+        run: |
+          TAG=${{ github.event.release.tag_name || github.sha }}
+          qemu-img create -f raw /tmp/nexos-${TAG}.raw 10G
+          LOOP=$(sudo losetup --show -fP /tmp/nexos-${TAG}.raw)
+          sudo sfdisk "$LOOP" <<< 'label: gpt
+          size=512M, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B
+          type=0FC63DAF-8483-4772-8E79-3D69D8477DE4'
+          sudo mkfs.fat -F32 "${LOOP}p1"
+          sudo mkfs.ext4 -F "${LOOP}p2"
+          sudo mount "${LOOP}p2" /mnt && sudo mkdir -p /mnt/boot && sudo mount "${LOOP}p1" /mnt/boot
+          sudo mkdir -p /mnt/iso && sudo mount -o loop NexOS/nexos-server.iso /mnt/iso
+          sudo cp -a /mnt/iso/* /mnt/ 2>/dev/null || true
+          sudo umount /mnt/iso /mnt/boot /mnt
+          sudo losetup -d "$LOOP"
+          tar czf /tmp/nexos-${TAG}.tar.gz -C /tmp nexos-${TAG}.raw
+
+      - name: Upload to GCP
+        run: |
+          TAG=${{ github.event.release.tag_name || github.sha }}
+          gcloud compute images create nexos-server-${TAG} \
+            --source-file=/tmp/nexos-${TAG}.tar.gz \
+            --guest-os-features=UEFI_COMPATIBLE \
+            --family=nexos-server \
+            --labels=version=${TAG}
