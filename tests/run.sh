@@ -18,11 +18,10 @@ else
     echo "  FAIL build.sh syntax"
     FAIL=$((FAIL+1))
 fi
-if bash "$ROOT/../test.sh" 2>&1 | tail -5; then
-    PASS=$((PASS+1))
-else
-    FAIL=$((FAIL+1))
-fi
+# Run test.sh and capture final result line
+RESULT=$(bash "$ROOT/../test.sh" 2>&1 | grep '^=== Results:' | tail -1)
+echo "  $RESULT"
+echo "$RESULT" | grep -q '0 fail' && PASS=$((PASS+1)) || FAIL=$((FAIL+1))
 
 # 2. Unit tests (if any)
 echo ""
