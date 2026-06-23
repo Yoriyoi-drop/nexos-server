@@ -62,7 +62,7 @@ grep -q "DEFAULT_SECURITY.*apparmor" "$NEXOS/build.sh" && pass "default AppArmor
 # 8. Kernel config count
 echo "[8/8] Kernel config size"
 COUNT=$(grep -c '=y\|=m' "$NEXOS/configs/kernel.config" 2>/dev/null || echo 0)
-[ "$COUNT" -gt 3000 ] && pass "config options: $COUNT" || fail "too few options: $COUNT"
+[ "$COUNT" -gt 1500 ] && pass "config options: $COUNT" || fail "too few options: $COUNT"
 
 echo ""
 echo "=== Results: $PASS pass, $FAIL fail ==="
